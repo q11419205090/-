@@ -4,11 +4,12 @@ export interface ScriptConfig {
   description: string;
   systemPrompt: string;
   talentPool: Array<{ name: string; description: string }>;
-  personalityPool: string[];
+  personalityPool: Array<{ name: string; description: string }>;
   initialStats: {
     [key: string]: { label: string; value: number; color: string };
   };
   coverImage?: string;
   status?: "available" | "in-progress";
   tags?: string[];
+  quickActions?: string[];
 }

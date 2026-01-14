@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ScriptConfig } from "@/types/script";
 import { getRandomItem, getRandomItems } from "@/lib/random";
 
@@ -9,13 +9,50 @@ type RoleCreatorProps = {
 };
 
 const genderOptions = ["男", "女", "其他"];
+const familyNames = [
+  "林",
+  "苏",
+  "白",
+  "夜",
+  "顾",
+  "沈",
+  "许",
+  "陆",
+  "秦",
+  "季",
+  "程",
+  "纪",
+  "唐",
+  "叶",
+  "姜",
+  "宋",
+];
+const givenNames = [
+  "清河",
+  "霜",
+  "沉星",
+  "渊",
+  "明烛",
+  "晚宁",
+  "千岚",
+  "昭",
+  "不语",
+  "闻风",
+  "青木",
+  "南枝",
+  "迟暮",
+  "执光",
+  "雪弦",
+  "临川",
+];
 
 export default function RoleCreator({ script }: RoleCreatorProps) {
   const [name, setName] = useState("");
   const [gender, setGender] = useState(genderOptions[0]);
   const [age, setAge] = useState(18);
   const [talents, setTalents] = useState<ScriptConfig["talentPool"]>([]);
-  const [personality, setPersonality] = useState<string | null>(null);
+  const [personality, setPersonality] =
+    useState<ScriptConfig["personalityPool"][number] | null>(null);
 
   const payload = useMemo(
     () => ({
@@ -32,12 +69,29 @@ export default function RoleCreator({ script }: RoleCreatorProps) {
     [age, gender, name, personality, script.id, script.initialStats, talents],
   );
 
+  useEffect(() => {
+    const storageKey = `script:${script.id}:profile`;
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(payload));
+    } catch {
+      // Ignore storage failures (private mode or quota limits).
+    }
+  }, [payload, script.id]);
+
   const handleDrawTalents = () => {
     setTalents(getRandomItems(script.talentPool, 3));
   };
 
   const handleDrawPersonality = () => {
     setPersonality(getRandomItem(script.personalityPool));
+  };
+
+  const handleRandomName = () => {
+    const family =
+      familyNames[Math.floor(Math.random() * familyNames.length)] ?? "";
+    const given =
+      givenNames[Math.floor(Math.random() * givenNames.length)] ?? "";
+    setName(`${family}${given}`.trim());
   };
 
   return (
@@ -52,12 +106,21 @@ export default function RoleCreator({ script }: RoleCreatorProps) {
       <div className="grid gap-4 md:grid-cols-3">
         <label className="space-y-2 text-sm text-slate-200">
           角色姓名
-          <input
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            className="w-full rounded-lg border border-white/10 bg-slate-950/70 px-3 py-2 text-white"
-            placeholder="输入姓名"
-          />
+          <div className="flex items-center gap-2">
+            <input
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              className="w-full rounded-lg border border-white/10 bg-slate-950/70 px-3 py-2 text-white"
+              placeholder="输入姓名"
+            />
+            <button
+              type="button"
+              onClick={handleRandomName}
+              className="rounded-full border border-white/10 bg-slate-950/70 px-3 py-2 text-xs text-slate-200 transition hover:border-purple-400/60 hover:text-white"
+            >
+              随机
+            </button>
+          </div>
         </label>
 
         <label className="space-y-2 text-sm text-slate-200">
@@ -132,8 +195,13 @@ export default function RoleCreator({ script }: RoleCreatorProps) {
             </button>
           </div>
           {personality ? (
-            <div className="rounded-lg border border-white/10 bg-slate-900/70 px-3 py-2 text-sm text-white">
-              {personality}
+            <div className="rounded-lg border border-white/10 bg-slate-900/70 p-3">
+              <div className="text-sm font-semibold text-white">
+                {personality.name}
+              </div>
+              <div className="text-xs text-slate-300">
+                {personality.description}
+              </div>
             </div>
           ) : (
             <p className="text-xs text-slate-400">暂未抽取性格。</p>
