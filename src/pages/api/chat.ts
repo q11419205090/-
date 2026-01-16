@@ -1,4 +1,4 @@
-import type { NextApiRequest, NextApiResponse } from "next";
+﻿import type { NextApiRequest, NextApiResponse } from "next";
 
 const DEFAULT_MODEL = "gpt-4o-mini";
 const DEFAULT_BASE_URL = "https://api.openai.com/v1";
@@ -120,6 +120,12 @@ export default async function handler(
     }
     return "";
   };
+  const flushIfPossible = (response: NextApiResponse) => {
+    const maybeFlush = (response as unknown as { flush?: () => void }).flush;
+    if (typeof maybeFlush === "function") {
+      maybeFlush();
+    }
+  };
 
   while (true) {
     const { value, done } = await reader.read();
@@ -147,9 +153,7 @@ export default async function handler(
         const deltaText = extractText(deltaPayload?.content ?? deltaPayload?.text);
         if (deltaText.length > 0) {
           res.write(deltaText);
-          if (typeof (res as { flush?: () => void }).flush === "function") {
-            (res as { flush: () => void }).flush();
-          }
+          flushIfPossible(res);
           continue;
         }
         const fallbackPayload = json.choices?.[0]?.message;
@@ -159,9 +163,7 @@ export default async function handler(
         if (!wroteFallback && fallbackText.length > 0) {
           wroteFallback = true;
           res.write(fallbackText);
-          if (typeof (res as { flush?: () => void }).flush === "function") {
-            (res as { flush: () => void }).flush();
-          }
+          flushIfPossible(res);
         }
       } catch {
         // Ignore malformed chunks.
@@ -171,3 +173,4 @@ export default async function handler(
 
   res.end();
 }
+
