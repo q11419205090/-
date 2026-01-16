@@ -1,4 +1,4 @@
-import type { ScriptConfig } from "@/types/script";
+﻿import type { ScriptConfig } from "@/types/script";
 
 export const yinshiLingyuan: ScriptConfig = {
   id: "yinshi-lingyuan",
@@ -74,6 +74,7 @@ export const yinshiLingyuan: ScriptConfig = {
 
 ---
 **请严格按照以上设定执行，现在开始第一步：询问玩家选择武器。**`,
+  openingPrompt: "开始游戏。请用 4-6 句交代开场，控制在 150-220 字，带出紧迫感，并给出 2-3 个可执行选项。",
   talentPool: [
     {
       name: "灵魂共振",
@@ -153,3 +154,5 @@ export const yinshiLingyuan: ScriptConfig = {
     "前往深夜小卖部购买符咒。",
   ],
 };
+
+

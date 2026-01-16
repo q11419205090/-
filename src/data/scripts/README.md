@@ -9,4 +9,5 @@
 
 - `id` 必须唯一，且用于路由 `/script/[id]`。
 - `systemPrompt` 请包含剧情规则，并使用 `[UPDATE]{...}[/UPDATE]` 输出数值变化。
+- 如果需要动态快捷指令，请让模型输出 `[ACTIONS][\"指令1\",\"指令2\"][/ACTIONS]`。
 - `initialStats` 会显示在对话页状态栏。

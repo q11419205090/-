@@ -12,4 +12,5 @@ export interface ScriptConfig {
   status?: "available" | "in-progress";
   tags?: string[];
   quickActions?: string[];
+  openingPrompt?: string;
 }

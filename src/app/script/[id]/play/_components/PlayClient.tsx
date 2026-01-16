@@ -1,14 +1,16 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ScriptConfig } from "@/types/script";
 import type { PlayerProfile } from "@/types/player";
+import { extractActionSuggestions } from "@/lib/action-parser";
 import { extractUpdatePayloads } from "@/lib/update-parser";
 
 type Message = {
   role: "user" | "assistant";
   content: string;
+  hidden?: boolean;
 };
 
 type PlayClientProps = {
@@ -16,6 +18,21 @@ type PlayClientProps = {
 };
 
 const buildStorageKey = (scriptId: string) => `script:${scriptId}:profile`;
+const formatAssistantText = (content: string) => {
+  const normalized = content.replace(/\r\n/g, "\n").trim();
+  if (!normalized) {
+    return [];
+  }
+  const withLineBreaks = normalized
+    .replace(/([。！？!?]+)([”"’」】）》)]?)(?!\n)/g, "$1$2\n")
+    .replace(/(…{2})([”"’」】）》)]?)(?!\n)/g, "$1$2\n")
+    .replace(/\n{2,}/g, "\n");
+
+  return withLineBreaks
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+};
 
 export default function PlayClient({ script }: PlayClientProps) {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -24,11 +41,18 @@ export default function PlayClient({ script }: PlayClientProps) {
   const [error, setError] = useState<string | null>(null);
   const [stats, setStats] = useState(script.initialStats);
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
+  const [profileLoaded, setProfileLoaded] = useState(false);
+  const [quickActions, setQuickActions] = useState<string[]>(
+    () => script.quickActions ?? [],
+  );
   const endRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const hasStartedRef = useRef(false);
 
   const storageKey = useMemo(() => buildStorageKey(script.id), [script.id]);
-  const quickActions = useMemo(() => script.quickActions ?? [], [script.quickActions]);
+  const openingPrompt =
+    script.openingPrompt ??
+    "开始游戏。请用 4-6 句交代开场，控制在 150-220 字，并给出 2-3 个行动选项。";
 
   useEffect(() => {
     try {
@@ -39,12 +63,14 @@ export default function PlayClient({ script }: PlayClientProps) {
       setProfile(JSON.parse(raw) as PlayerProfile);
     } catch {
       setProfile(null);
+    } finally {
+      setProfileLoaded(true);
     }
   }, [storageKey]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, quickActions]);
 
   const applyUpdatePayload = (payload: Record<string, unknown>) => {
     setStats((current) => {
@@ -74,14 +100,39 @@ export default function PlayClient({ script }: PlayClientProps) {
     });
   };
 
-  const handleSend = async () => {
-    if (!input.trim() || isStreaming) {
+  const finalizeAssistantMessage = (
+    assistantText: string,
+    assistantIndex: number,
+  ) => {
+    const { cleanText, updates } = extractUpdatePayloads(assistantText);
+    const { cleanText: actionCleanText, actions } =
+      extractActionSuggestions(cleanText);
+
+    setMessages((current) => {
+      const updated = [...current];
+      updated[assistantIndex] = {
+        role: "assistant",
+        content: actionCleanText || "（无回复）",
+      };
+      return updated;
+    });
+
+    updates.forEach((payload) => applyUpdatePayload(payload));
+    if (actions.length > 0) {
+      setQuickActions(actions);
+    }
+  };
+
+
+  const sendMessage = async (text: string, hideUser = false) => {
+    const trimmedText = text.trim();
+    if (!trimmedText || isStreaming) {
       return;
     }
 
     const nextMessages: Message[] = [
       ...messages,
-      { role: "user", content: input.trim() },
+      { role: "user", content: trimmedText, hidden: hideUser },
       { role: "assistant", content: "" },
     ];
     const assistantIndex = nextMessages.length - 1;
@@ -128,17 +179,7 @@ export default function PlayClient({ script }: PlayClientProps) {
         });
       }
 
-      const { cleanText, updates } = extractUpdatePayloads(assistantText);
-      setMessages((current) => {
-        const updated = [...current];
-        updated[assistantIndex] = {
-          role: "assistant",
-          content: cleanText || "（无回复）",
-        };
-        return updated;
-      });
-
-      updates.forEach((payload) => applyUpdatePayload(payload));
+      finalizeAssistantMessage(assistantText, assistantIndex);
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "AI 服务暂时不可用。";
@@ -146,6 +187,21 @@ export default function PlayClient({ script }: PlayClientProps) {
     } finally {
       setIsStreaming(false);
     }
+  };
+
+  useEffect(() => {
+    if (!profileLoaded || hasStartedRef.current || isStreaming) {
+      return;
+    }
+    if (messages.length > 0) {
+      return;
+    }
+    hasStartedRef.current = true;
+    void sendMessage(openingPrompt, true);
+  }, [messages.length, profileLoaded, isStreaming, openingPrompt]);
+
+  const handleSend = async () => {
+    await sendMessage(input);
   };
 
   return (
@@ -165,7 +221,7 @@ export default function PlayClient({ script }: PlayClientProps) {
           </span>
         </header>
 
-        <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
+        <div className="grid items-start gap-6 lg:grid-cols-[280px_1fr]">
           <aside className="space-y-4 rounded-2xl border border-white/10 bg-slate-900/40 p-5">
             <h2 className="text-sm font-semibold text-white">实时状态栏</h2>
             <div className="space-y-3">
@@ -194,14 +250,16 @@ export default function PlayClient({ script }: PlayClientProps) {
             )}
           </aside>
 
-          <section className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-slate-900/40 p-5">
-            <div className="flex-1 space-y-4 overflow-y-auto">
+          <section className="flex max-h-[calc(100vh-220px)] min-h-0 flex-col gap-4 overflow-hidden rounded-2xl border border-white/10 bg-slate-900/40 p-5">
+            <div className="flex-1 space-y-10 overflow-y-auto">
               {messages.length === 0 ? (
-                <div className="rounded-xl border border-white/10 bg-slate-950/70 p-4 text-sm text-slate-300">
-                  输入指令开启对话，AI 会在输出中附带 [UPDATE] 数值变更。
+                <div className="rounded-xl border border-white/10 bg-slate-950/70 p-6 text-[17px] leading-8 text-slate-300">
+                  正在生成开场剧情，请稍候...
                 </div>
               ) : (
-                messages.map((message, index) => (
+                messages
+                  .filter((message) => !message.hidden)
+                  .map((message, index) => (
                   <div
                     key={`${message.role}-${index}`}
                     className={`flex ${
@@ -211,21 +269,36 @@ export default function PlayClient({ script }: PlayClientProps) {
                     }`}
                   >
                     <div
-                      className={`max-w-[80%] rounded-xl border border-white/10 p-3 text-sm whitespace-pre-wrap ${
+                      className={`rounded-2xl border border-white/10 px-6 py-5 text-[17px] leading-8 tracking-[0.015em] break-words ${
                         message.role === "user"
-                          ? "bg-purple-500/20 text-white"
-                          : "bg-slate-950/70 text-slate-200"
+                          ? "max-w-[70%] bg-purple-500/20 text-white whitespace-pre-wrap"
+                          : "max-w-[72ch] bg-slate-950/60 text-slate-100"
                       }`}
                     >
-                      {message.content}
+                      {message.role === "assistant" ? (
+                        <div className="space-y-3">
+                          {formatAssistantText(message.content).map(
+                            (line, lineIndex) => (
+                              <p
+                                key={`${index}-${lineIndex}`}
+                                className="whitespace-pre-wrap"
+                              >
+                                {line}
+                              </p>
+                            ),
+                          )}
+                        </div>
+                      ) : (
+                        message.content
+                      )}
                     </div>
                   </div>
-                ))
+                  ))
               )}
               <div ref={endRef} />
             </div>
 
-            {quickActions.length > 0 && (
+            {messages.length > 0 && quickActions.length > 0 && !isStreaming && (
               <div className="flex flex-wrap gap-2">
                 {quickActions.map((action) => (
                   <button
@@ -261,7 +334,7 @@ export default function PlayClient({ script }: PlayClientProps) {
                     void handleSend();
                   }
                 }}
-                className="flex-1 bg-transparent text-sm text-slate-200 outline-none"
+                className="flex-1 bg-transparent text-base text-slate-200 outline-none"
                 placeholder="输入指令，比如：调查旧校舍走廊。"
               />
               <button
@@ -278,3 +351,6 @@ export default function PlayClient({ script }: PlayClientProps) {
     </div>
   );
 }
+
+
+
